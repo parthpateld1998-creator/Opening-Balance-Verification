@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opening Balance Verification & Trial Balance Reconciliation System (SA 510)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        :root {
+            --audit-primary: #0f172a;
+            --audit-secondary: #1e293b;
+            --audit-accent: #0284c7;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bs-body-bg);
+            color: var(--bs-body-color);
+        }
+        .sidebar {
+            background-color: var(--audit-primary);
+            color: white;
+            min-height: 100vh;
+        }
+        .sidebar .nav-link {
+            color: #cbd5e1;
+            border-radius: 0.375rem;
+            margin-bottom: 0.25rem;
+        }
+        .sidebar .nav-link.active, .sidebar .nav-link:hover {
+            background-color: var(--audit-accent);
+            color: white;
+        }
+        .card-kpi {
+            border-left: 4px solid var(--audit-accent);
+            transition: transform 0.2s;
+        }
+        .card-kpi:hover {
+            transform: translateY(-2px);
+        }
+        .status-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        @media print {
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <div class="row">
+        <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse p-3 no-print">
+            <div class="d-flex align-items-center mb-4 text-white text-decoration-none">
+                <i class="bi bi-shield-check fs-3 me-2 text-info"></i>
+                <span class="fs-5 fw-bold text-wrap">SA 510 Engine</span>
+            </div>
+            <hr>
+            <ul class="nav flex-column h-100">
+                <li class="nav-item">
+                    <a class="nav-link active" data-bs-toggle="tab" href="#tab-metadata">
+                        <i class="bi bi-folder-symlink me-2"></i> Engagement Info
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#tab-import">
+                        <i class="bi bi-file-earmark-arrow-up me-2"></i> Import Data
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#tab-dashboard" id="nav-dashboard" onclick="renderDashboardCharts()">
+                        <i class="bi bi-speedometer2 me-2"></i> Audit Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#tab-recon">
+                        <i class="bi bi-grid-3x3-gap me-2"></i> Reconciliation Sheet
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-bs-toggle="tab" href="#tab-observations">
+                        <i class="bi bi-exclamation-triangle me-2"></i> Observations & Index
+                    </a>
+                </li>
+            </ul>
+            <div class="mt-auto pt-5">
+                <div class="form-check form-switch text-light">
+                    <input class="form-check-switch form-check-input" type="checkbox" id="themeSwitch" onclick="toggleTheme()">
+                    <label class="form-check-label" for="themeSwitch">Dark Mode</label>
+                </div>
+                <div class="small text-muted mt-2">v2026.3 • Offline Cache Active</div>
+            </div>
+        </nav>
+
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-3">
+            
+            <header class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-2 pb-2 mb-3 border-bottom no-print">
+                <h4 id="displayClientName">Client: Unassigned Project</h4>
+                <div class="btn-toolbar mb-2 mb-md-0 gap-2 align-items-center">
+                    
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-dark dropdown-toggle border-secondary fw-bold text-info" type="button" id="dropdownSavedProjects" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-folder2-open me-1"></i> Open Saved Engagement
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow" id="savedProjectsListMenu" style="min-width: 280px; max-height: 350px; overflow-y: auto;">
+                            <li><span class="dropdown-item text-muted small italic">No saved projects scanned</span></li>
+                        </ul>
+                    </div>
+
+                    <button class="btn btn-sm btn-outline-secondary" onclick="saveProjectToLocalStorage()"><i class="bi bi-cloud-arrow-up-fill me-1"></i>Save Project</button>
+                    <button class="btn btn-sm btn-success fw-bold" onclick="exportReconciliationToExcel()"><i class="bi bi-file-earmark-excel me-1"></i>Excel Export (CA Format)</button>
+                    <button class="btn btn-sm btn-danger" onclick="exportAuditReportPDF()"><i class="bi bi-file-earmark-pdf me-1"></i>Generate Audit Report</button>
+                </div>
+            </header>
+
+            <div class="tab-content">
+                
+                <div class="tab-pane fade show active" id="tab-metadata">
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-secondary text-white fw-bold">SA 510 Engagement Parameters & Control Environment</div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Entity / Client Name</label>
+                                    <input type="text" class="form-control form-control-sm" id="metaEntityName" value="Alpha Global Corporate Ltd" oninput="updateHeader()">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label fw-semibold">Financial Year</label>
+                                    <input type="text" class="form-control form-control-sm" id="metaFY" value="2025-26" oninput="updateHeader()">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Engagement Partner</label>
+                                    <input type="text" class="form-control form-control-sm" id="metaPartner" value="CA. Rajesh Kumar, FCA">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Audit Manager</label>
+                                    <input type="text" class="form-control form-control-sm" id="metaManager" value="Neha Sharma, ACA">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Prepared By</label>
+                                    <input type="text" class="form-control form-control-sm" id="metaPreparedBy" value="Amit Patel">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Reviewed By</label>
+                                    <input type="text" class="form-control form-control-sm" id="metaReviewedBy" value="CA. Rajesh Kumar">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold">Date of Review</label>
+                                    <input type="date" class="form-control form-control-sm" id="metaReviewDate" value="2026-06-10">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm mb-4 border-danger">
+                        <div class="card-header bg-danger text-white fw-bold"><i class="bi bi-shield-lock-fill me-1"></i> Professional Data Security & Client Information Erasure Controls</div>
+                        <div class="card-body">
+                            <div class="row g-3 align-items-center">
+                                <div class="col-md-7">
+                                    <p class="mb-0 small text-muted">
+                                        In compliance with auditing standard confidentiality guidelines, all ingested data remains strictly inside your local browser storage infrastructure. Use the manual control vectors below to securely purge client worksheets or flush active parameters from system RAM layers.
+                                    </p>
+                                </div>
+                                <div class="col-md-5 text-md-end d-flex gap-2 justify-content-md-end">
+                                    <button class="btn btn-sm btn-outline-warning fw-bold text-dark" onclick="clearActiveWorkspaceData()"><i class="bi bi-arrow-counterclockwise me-1"></i>Clear Workspace</button>
+                                    <button class="btn btn-sm btn-danger fw-bold" onclick="purgeSavedProjectCache()"><i class="bi bi-trash3-fill me-1"></i>Delete Saved Engagement</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm mb-4 border-warning">
+                        <div class="card-header bg-warning text-dark fw-bold"><i class="bi bi-funnel-fill me-1"></i> SA 510 Scoping Control: Profit & Loss Account Ingestion Filter</div>
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" role="switch" id="excludePLToggle" checked onchange="processReconciliation()">
+                                <label class="form-check-label fw-bold text-primary" for="excludePLToggle">Actively Ignore / Separate P&L Accounts from Balances Matching Lifecycle</label>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold text-danger">P&L Revenue/Expense Naming Identifiers (Comma Separated)</label>
+                                    <input type="text" class="form-control form-control-sm" id="plKeywords" value="SALES, PURCHASE, EXPENSE, INCOME, RENT, SALARY, WAGES, INTEREST, DEPRECIATION, REVENUE, COST, TAX, FEES, GAIN, LOSS, TRAVEL, INSURANCE, REPAIRS, LEASE, UTILITIES, FREIGHT" onchange="processReconciliation()">
+                                    <div class="form-text text-muted" style="font-size:11px;">Accounts matching these tokens will be cataloged as 'EXCLUDED (P&L)' instead of generating 'Missing' exceptions.</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold text-success">Accrual-Safe Balance Sheet Protect Tokens (Bypass Filters)</label>
+                                    <input type="text" class="form-control form-control-sm" id="bsSafeKeywords" value="PAYABLE, OUTSTANDING, PREPAID, ACCRUED, RECEIVABLE, ADVANCE, PROVISION, LIABILITIES, ASSETS, ACCUMULATED" onchange="processReconciliation()">
+                                    <div class="form-text text-muted" style="font-size:11px;">Critical Check: Accounts containing these specific words will NEVER be ignored (e.g. "Salary Payable" stays in verification scope).</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-primary text-white fw-bold">Materiality Strategy Configurations (SA 320 Parameters)</div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Planning Materiality (₹)</label>
+                                    <input type="number" class="form-control form-control-sm" id="matPlanning" value="100000" onchange="processReconciliation()">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Performance Materiality (₹)</label>
+                                    <input type="number" class="form-control form-control-sm" id="matPerformance" value="75000" onchange="processReconciliation()">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold">Clearly Trivial Threshold (₹)</label>
+                                    <input type="number" class="form-control form-control-sm" id="matTrivial" value="5000" onchange="processReconciliation()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="tab-import">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="card shadow-sm h-100">
+                                <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                                    <span>SECTION A: Current Year Opening Trial Balance</span>
+                                    <span class="badge bg-primary" id="cyStatusBadge">Pending Ingestion</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Source Document (XLSX, XLS, CSV)</label>
+                                        <input type="file" class="form-control form-control-sm" id="uploadCY" accept=".xlsx, .xls, .csv" onchange="handleFileUpload('CY')">
+                                    </div>
+                                    <div class="p-3 bg-light border rounded text-muted mb-3 small">
+                                        <strong>Expected Fields:</strong> Ledger Name, Debit, Credit
+                                    </div>
+                                    <div id="mappingCYContainer" style="display:none;">
+                                        <h6 class="fw-bold text-secondary">Dynamic Field Overrides (Current Year)</h6>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-4"><label class="small fw-semibold">Ledger Key</label><select id="mapCYLedger" class="form-select form-select-sm"></select></div>
+                                            <div class="col-4"><label class="small fw-semibold">Debit Key</label><select id="mapCYDebit" class="form-select form-select-sm"></select></div>
+                                            <div class="col-4"><label class="small fw-semibold">Credit Key</label><select id="mapCYCredit" class="form-select form-select-sm"></select></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="card shadow-sm h-100">
+                                <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                                    <span>SECTION B: Previous Year Final Audited Trial Balance</span>
+                                    <span class="badge bg-primary" id="pyStatusBadge">Pending Ingestion</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Source Document (XLSX, XLS, CSV)</label>
+                                        <input type="file" class="form-control form-control-sm" id="uploadPY" accept=".xlsx, .xls, .csv" onchange="handleFileUpload('PY')">
+                                    </div>
+                                    <div class="p-3 bg-light border rounded text-muted mb-3 small">
+                                        <strong>Expected Fields:</strong> Ledger Name, Debit, Credit
+                                    </div>
+                                    <div id="mappingPYContainer" style="display:none;">
+                                        <h6 class="fw-bold text-secondary">Dynamic Field Overrides (Previous Year)</h6>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-4"><label class="small fw-semibold">Ledger Key</label><select id="mapPYLedger" class="form-select form-select-sm"></select></div>
+                                            <div class="col-4"><label class="small fw-semibold">Debit Key</label><select id="mapPYDebit" class="form-select form-select-sm"></select></div>
+                                            <div class="col-4"><label class="small fw-semibold">Credit Key</label><select id="mapPYCredit" class="form-select form-select-sm"></select></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 card shadow-sm d-none" id="processingTriggerCard">
+                        <div class="card-body text-center bg-light">
+                            <h5 class="fw-bold text-success"><i class="bi bi-cpu-fill me-2"></i>Data Ingestion Pipelines Active</h5>
+                            <button class="btn btn-primary px-5 fw-bold" onclick="processReconciliation()">Execute Reconciliation Engine Matrix</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="tab-dashboard">
+                    <div class="row row-cols-2 row-cols-md-5 g-3 mb-4 text-dark">
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3"><div class="text-muted small fw-bold">TOTAL PY LEDGERS</div><div class="fs-4 fw-bold" id="kpiPYCount">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3"><div class="text-muted small fw-bold">TOTAL CY LEDGERS</div><div class="fs-4 fw-bold" id="kpiCYCount">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-success"><div class="text-success small fw-bold">MATCHED LEDGERS</div><div class="fs-4 fw-bold" id="kpiMatched">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-danger"><div class="text-danger small fw-bold">BALANCE MISMATCHES</div><div class="fs-4 fw-bold" id="kpiMismatched">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-warning"><div class="text-warning small fw-bold">MISSING IN CY</div><div class="fs-4 fw-bold" id="kpiMissing">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-info"><div class="text-info small fw-bold">NEW LEDGERS IN CY</div><div class="fs-4 fw-bold" id="kpiNew">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-dark"><div class="text-danger small fw-bold">HIGH RISK EXCEPTIONS</div><div class="fs-4 fw-bold" id="kpiHighRisk">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-primary"><div class="text-primary small fw-bold">MATERIAL VARIANCES</div><div class="fs-4 fw-bold" id="kpiMaterial">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-purple"><div class="text-dark small fw-bold">FUZZY MAPPED</div><div class="fs-4 fw-bold" id="kpiFuzzy">0</div></div></div>
+                        <div class="col"><div class="card h-100 card-kpi bg-white shadow-sm p-3 border-start border-secondary"><div class="text-secondary small fw-bold">EXCLUDED (P&L)</div><div class="fs-4 fw-bold" id="kpiExcludedPL">0</div></div></div>
+                    </div>
+
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-info text-dark fw-bold"><i class="bi bi-layout-three-columns me-2"></i>Trial Balance Aggregates Integrity Check</div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped table-bordered m-0 align-middle small text-center">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Validation Pillar Metric</th>
+                                            <th>Previous Year Closing (₹)</th>
+                                            <th>Current Year Opening (₹)</th>
+                                            <th>Absolute Variance (₹)</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bsValidationGrid">
+                                        <tr><td colspan="5" class="text-center text-muted">Awaiting data reconciliation context...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4"><div class="card p-2 shadow-sm bg-white"><h6 class="text-center fw-bold text-secondary">Matched vs Unmatched</h6><canvas id="chartMatched" height="180"></canvas></div></div>
+                        <div class="col-md-4"><div class="card p-2 shadow-sm bg-white"><h6 class="text-center fw-bold text-secondary">Status Matrix</h6><canvas id="chartStatus" height="180"></canvas></div></div>
+                        <div class="col-md-4"><div class="card p-2 shadow-sm bg-white"><h6 class="text-center fw-bold text-secondary">Risk Stratification</h6><canvas id="chartRisk" height="180"></canvas></div></div>
+                        <div class="col-md-12"><div class="card p-2 shadow-sm bg-white"><h6 class="text-center fw-bold text-secondary">Top 20 Critical Discrepancy Variances Ledger Wise</h6><canvas id="chartTopVariances" height="250"></canvas></div></div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="tab-recon">
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                            <span>Audit Reconciliation Matrix Workspace</span>
+                            <span class="badge bg-light text-dark" id="filteredRecordsCounter">Showing 0 / 0 entries</span>
+                        </div>
+                        <div class="card-body bg-light">
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <input type="text" class="form-control form-control-sm" id="filterSearch" placeholder="Search by Ledger Name..." oninput="renderReconciliationGrid()">
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filterStatus" onchange="renderReconciliationGrid()">
+                                        <option value="">-- Status --</option>
+                                        <option value="MATCHED">MATCHED</option>
+                                        <option value="BALANCE MISMATCH">BALANCE MISMATCH</option>
+                                        <option value="MANUALLY MAPPED">MANUALLY MAPPED</option>
+                                        <option value="MISSING IN CURRENT YEAR">MISSING IN CY</option>
+                                        <option value="NEW LEDGER IN CURRENT YEAR">NEW LEDGER IN CY</option>
+                                        <option value="POSSIBLE MATCH">POSSIBLE MATCH</option>
+                                        <option value="EXCLUDED (P&L)">EXCLUDED (P&L)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filterRisk" onchange="renderReconciliationGrid()">
+                                        <option value="">-- Risk Rating --</option>
+                                        <option value="No Risk">No Risk</option>
+                                        <option value="Low">Low</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="High">High</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filterMateriality" onchange="renderReconciliationGrid()">
+                                        <option value="">-- Materiality Level --</option>
+                                        <option value="Material Variance">Material Variance</option>
+                                        <option value="Immaterial Variance">Immaterial Variance</option>
+                                        <option value="Clearly Trivial">Clearly Trivial</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive border rounded bg-white shadow-sm" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover table-bordered align-middle mb-0 text-nowrap small">
+                            <thead class="table-secondary sticky-top">
+                                <tr class="text-center">
+                                    <th>Sr</th>
+                                    <th>PY Ledger Name</th>
+                                    <th>PY Balance (₹)</th>
+                                    <th style="min-width: 260px;">CY Ledger Item Maps</th>
+                                    <th>CY Combined Balance (₹)</th>
+                                    <th>Variance (₹)</th>
+                                    <th>Var %</th>
+                                    <th>Fuzzy %</th>
+                                    <th>Match Status</th>
+                                    <th>Risk</th>
+                                    <th>Materiality Type</th>
+                                    <th>Action Override Maps</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reconMatrixGrid">
+                                <tr><td colspan="12" class="text-center text-muted p-4">Please upload trial balance datasets to verify ledger layouts.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="tab-observations">
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-secondary text-white fw-bold">SA 510 Working Paper Registry Index Mapping</div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm table-bordered m-0 align-middle">
+                                <thead class="table-light text-center small fw-bold">
+                                    <tr><th>Index Ref</th><th>Working Paper Title Objective</th><th>Scope Mapping Status</th></tr>
+                                </thead>
+                                <tbody class="small">
+                                    <tr><td><strong>OB-01</strong></td><td>Engagement Parameters Dashboard & Materiality Index</td><td>Active Overview Control Engine</td></tr>
+                                    <tr><td><strong>OB-02</strong></td><td>Cross-Period Structural Reconciliation Matrix</td><td>Dynamic Operational Grid System</td></tr>
+                                    <tr><td><strong>OB-03</strong></td><td>Granular Variance Material Risk Stratification</td><td>Algorithmic Filtering View</td></tr>
+                                    <tr><td><strong>OB-04</strong></td><td>Omitted Balances Profile Engine (Missing In CY)</td><td>Active Exceptions Extraction</td></tr>
+                                    <tr><td><strong>OB-05</strong></td><td>De-novo Created Opening Line Accounts (New In CY)</td><td>Active Exceptions Extraction</td></tr>
+                                    <tr><td><strong>OB-06</strong></td><td>Automated Standard SA 510 Exception Statements</td><td>System Generated Standard Narratives</td></tr>
+                                    <tr><td><strong>OB-07</strong></td><td>Final SA 510 Auditor Inferences Formulation</td><td>Contextual Judgement Conclusion</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-danger text-white fw-bold">Automated SA 510 Audit Exception Observations</div>
+                        <div class="card-body bg-light">
+                            <div id="observationGeneratorOutput" class="d-flex flex-column gap-2">
+                                <div class="alert alert-info m-0">No automated variances generated. Complete ingestion processes first.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-dark text-white fw-bold">Audit Executive Inference Framework & SA 510 Conclusion Matrix</div>
+                        <div class="card-body">
+                            <div class="p-3 mb-3 border rounded border-warning bg-light">
+                                <h6 class="fw-bold text-warning-emphasis"><i class="bi bi-info-circle-fill me-2"></i>Evaluated System Opinion Severity Conclusion</h6>
+                                <div class="fs-5 fw-bold" id="opinionSystemAssessment">System Analysis Pending</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold text-secondary">Auditor Manual Judgement synthesis</label>
+                                <textarea class="form-textarea form-control" rows="4" id="auditorManualSynthesisText">Based upon verification procedures performed under SA 510 guidelines, we have cross-referenced current year opening balances with audited previous year closing balances. All material variations, missing line items, and new ledgers have been flagged, checked, and integrated into our audit working papers repository.</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+</div>
+
+<div class="modal fade" id="advancedMapModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="bi bi-shuffle"></i> Bi-Directional Structural Account Mapping</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-light">
+                <div class="alert alert-info py-2 small mb-3">
+                    <strong>Target PY Ledger Group:</strong> <span id="advModalPYName" class="fw-bold"></span><br>
+                    <strong>Audited Base Value:</strong> ₹ <span id="advModalPYBal" class="fw-bold"></span><br>
+                    <strong>Current Map Total:</strong> ₹ <span id="advModalCYTotal" class="fw-bold text-primary"></span>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">Audit Documentation Justification / Cross-Reference Notes:</label>
+                    <input type="text" id="advJustificationInput" class="form-control form-control-sm" placeholder="e.g., Regrouping multiple subsidiary items / Partial structural ledger realignment">
+                </div>
+
+                <label class="form-label fw-bold small text-secondary">Available Current Year Ledger Pools (Select items to map / allocate partial values):</label>
+                <div class="table-responsive border bg-white rounded shadow-sm" style="max-height: 280px; overflow-y: auto;">
+                    <table class="table table-sm table-hover mb-0 text-nowrap small align-middle">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 40px;">Select</th>
+                                <th>CY Account Nomenclature</th>
+                                <th class="text-end">Pool Available Bal (₹)</th>
+                                <th class="text-center" style="width: 150px;">Allocation Entry (₹)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="advModalCYPoolGrid"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="clearCurrentRowMappings()"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset Row Links</button>
+                <div>
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="commitAdvancedMapping()">Apply Mapping Vectors</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let datasetCYRaw = [];
+    let datasetPYRaw = [];
+    let datasetReconciliationMaster = [];
+    let globalCYRegistry = []; 
+    let globalCharts = {};
+    let currentMappingSrNo = null;
+
+    const CONFIG_AUTO_MAPPING_DICTIONARY = {
+        ledger: ['ledger', 'ledger name', 'account', 'account name', 'particulars', 'ledgers'],
+        debit: ['debit', 'dr', 'debit amount', 'debit balance'],
+        credit: ['credit', 'cr', 'credit amount', 'credit balance'],
+        balance: ['balance', 'amount', 'closing balance', 'opening balance', 'net balance']
+    };
+
+    function toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-bs-theme');
+        document.documentElement.setAttribute('data-bs-theme', currentTheme === 'dark' ? 'light' : 'dark');
+    }
+
+    function updateHeader() {
+        const entity = document.getElementById('metaEntityName').value || 'Unassigned Project';
+        const fy = document.getElementById('metaFY').value || 'N/A';
+        document.getElementById('displayClientName').innerText = `Client: ${entity} (${fy})`;
+    }
+
+    // FUNCTION 1: CLEAN RAM / OPERATION WORKSPACE WITHOUT DELETING CACHE FILES
+    function clearActiveWorkspaceData() {
+        if (!confirm("Attention: This will completely wipe out the active data pools from your current workspace. Unsaved variations will be lost. Proceed?")) return;
+
+        datasetCYRaw = [];
+        datasetPYRaw = [];
+        datasetReconciliationMaster = [];
+        globalCYRegistry = [];
+
+        // Reset elements
+        document.getElementById('uploadCY').value = "";
+        document.getElementById('uploadPY').value = "";
+        document.getElementById('cyStatusBadge').className = "badge bg-primary";
+        document.getElementById('cyStatusBadge').innerText = "Pending Ingestion";
+        document.getElementById('pyStatusBadge').className = "badge bg-primary";
+        document.getElementById('pyStatusBadge').innerText = "Pending Ingestion";
+        document.getElementById('mappingCYContainer').style.display = 'none';
+        document.getElementById('mappingPYContainer').style.display = 'none';
+        document.getElementById('processingTriggerCard').classList.add('d-none');
+
+        // Reload UI blocks
+        renderDashboardSummaryKPIs();
+        renderStructuralBSValidations();
+        renderReconciliationGrid();
+        generateAuditObservationsAndConclusions();
+
+        alert("Active workspace memory arrays flushed successfully.");
+    }
+
+    // FUNCTION 2: PERMANENTLY ERASE SELECTED CLIENT CONFIGURATION FROM LOCALSTORAGE
+    function purgeSavedProjectCache() {
+        const companyKey = document.getElementById('metaEntityName').value.trim();
+        const yearKey = document.getElementById('metaFY').value.trim();
+        const storageKey = `SA510_PRJ_REVISED_${companyKey}_${yearKey}`;
+
+        if (!companyKey || !yearKey) {
+            alert("Error: Please provide a valid Client Name and Financial Year parameter configuration to target cache keys.");
+            return;
+        }
+
+        if (!localStorage.getItem(storageKey)) {
+            alert(`No cached project matches key identity: "${companyKey} [${yearKey}]".`);
+            return;
+        }
+
+        if (!confirm(`CRITICAL SECURITY WARNING:\nAre you absolutely sure you want to permanently delete all saved opening balance worksheets and file structures for client "${companyKey}" (Period: ${yearKey})?\n\nThis operation cannot be undone.`)) {
+            return;
+        }
+
+        localStorage.removeItem(storageKey);
+        alert(`SUCCESS: Client record index "${storageKey}" safely purged from local disk storage logs.`);
+        
+        scanAndPopulateSavedProjectsMenu();
+        clearActiveWorkspaceData();
+    }
+
+    function handleFileUpload(periodType) {
+        const fileInput = document.getElementById('upload' + periodType);
+        if (!fileInput.files.length) return;
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const initialSheet = workbook.SheetNames[0];
+            const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[initialSheet]);
+
+            if(periodType === 'CY') {
+                datasetCYRaw = sheetData;
+                document.getElementById('cyStatusBadge').className = "badge bg-success";
+                document.getElementById('cyStatusBadge').innerText = `Loaded ${sheetData.length} Rows`;
+                populateMappingDropdowns('CY', Object.keys(sheetData[0] || {}));
+            } else {
+                datasetPYRaw = sheetData;
+                document.getElementById('pyStatusBadge').className = "badge bg-success";
+                document.getElementById('pyStatusBadge').innerText = `Loaded ${sheetData.length} Rows`;
+                populateMappingDropdowns('PY', Object.keys(sheetData[0] || {}));
+            }
+
+            if(datasetCYRaw.length && datasetPYRaw.length) {
+                document.getElementById('processingTriggerCard').classList.remove('d-none');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function populateMappingDropdowns(periodType, headers) {
+        const container = document.getElementById(`mapping${periodType}Container`);
+        container.style.display = 'block';
+
+        if(periodType === 'CY') {
+            fillDropdown('mapCYLedger', headers, CONFIG_AUTO_MAPPING_DICTIONARY.ledger);
+            fillDropdown('mapCYDebit', headers, CONFIG_AUTO_MAPPING_DICTIONARY.debit);
+            fillDropdown('mapCYCredit', headers, CONFIG_AUTO_MAPPING_DICTIONARY.credit);
+        } else {
+            fillDropdown('mapPYLedger', headers, CONFIG_AUTO_MAPPING_DICTIONARY.ledger);
+            fillDropdown('mapPYDebit', headers, CONFIG_AUTO_MAPPING_DICTIONARY.debit);
+            fillDropdown('mapPYCredit', headers, CONFIG_AUTO_MAPPING_DICTIONARY.credit);
+        }
+    }
+
+    function fillDropdown(dropdownId, headers, tokenList) {
+        const select = document.getElementById(dropdownId);
+        select.innerHTML = '';
+        let prioritizedIndex = 0;
+
+        headers.forEach((header, idx) => {
+            const opt = document.createElement('option');
+            opt.value = header;
+            opt.innerText = header;
+            select.appendChild(opt);
+            
+            tokenList.forEach(token => {
+                if(header.toLowerCase().trim() === token) { prioritizedIndex = idx; }
+            });
+        });
+        if(select.options.length > prioritizedIndex) select.selectedIndex = prioritizedIndex;
+    }
+
+    function standardizeString(text) {
+        if (!text) return "";
+        return text.toString().toUpperCase().replace(/[.,_()\-]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function computeLevenshteinDistance(str1, str2) {
+        const matrix = [];
+        for (let i = 0; i <= str2.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= str1.length; j++) matrix[0][j] = j;
+
+        for (let i = 1; i <= str2.length; i++) {
+            for (let j = 1; j <= str1.length; j++) {
+                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+                }
+            }
+        }
+        return matrix[str2.length][str1.length];
+    }
+
+    function calculateStringSimilarityPercentage(s1, s2) {
+        const longer = s1.length > s2.length ? s1 : s2;
+        if (longer.length === 0) return 100.0;
+        return ((longer.length - computeLevenshteinDistance(s1, s2)) / longer.length) * 100;
+    }
+
+    function processReconciliation() {
+        datasetReconciliationMaster = [];
+        
+        const cyLedgerKey = document.getElementById('mapCYLedger').value;
+        const cyDebitKey = document.getElementById('mapCYDebit').value;
+        const cyCreditKey = document.getElementById('mapCYCredit').value;
+
+        const pyLedgerKey = document.getElementById('mapPYLedger').value;
+        const pyDebitKey = document.getElementById('mapPYDebit').value;
+        const pyCreditKey = document.getElementById('mapPYCredit').value;
+
+        const doPLExclusion = document.getElementById('excludePLToggle').checked;
+        const plTokens = document.getElementById('plKeywords').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+        const bsSafeTokens = document.getElementById('bsSafeKeywords').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+
+        globalCYRegistry = datasetCYRaw.map(item => {
+            let dr = parseFloat(item[cyDebitKey]) || 0;
+            let cr = parseFloat(item[cyCreditKey]) || 0;
+            let net = dr - cr;
+            return {
+                originalLedger: item[cyLedgerKey],
+                normalizedLedger: standardizeString(item[cyLedgerKey]),
+                totalBalance: net,
+                remainingBalance: net
+            };
+        });
+
+        let normalizedPYMap = datasetPYRaw.map(item => {
+            let dr = parseFloat(item[pyDebitKey]) || 0;
+            let cr = parseFloat(item[pyCreditKey]) || 0;
+            return {
+                originalLedger: item[pyLedgerKey],
+                normalizedLedger: standardizeString(item[pyLedgerKey]),
+                balance: dr - cr
+            };
+        });
+
+        let serialCounter = 1;
+
+        normalizedPYMap.forEach(pyItem => {
+            if (doPLExclusion) {
+                let matchesPLKeyword = plTokens.some(tok => pyItem.normalizedLedger.includes(tok));
+                let matchesBSSafeKeyword = bsSafeTokens.some(tok => pyItem.normalizedLedger.includes(tok));
+                
+                if (matchesPLKeyword && !matchesBSSafeKeyword) {
+                    datasetReconciliationMaster.push({
+                        srNo: serialCounter++,
+                        pyLedger: pyItem.originalLedger,
+                        pyBalance: pyItem.balance,
+                        mappedCYItems: [],
+                        cyLedger: 'N/A - CLOSED TO RESERVES',
+                        cyBalance: 0,
+                        variance: 0,
+                        variancePct: 0,
+                        fuzzyScore: 0,
+                        status: 'EXCLUDED (P&L)',
+                        risk: 'No Risk',
+                        materialityType: 'Clearly Trivial',
+                        remarks: 'Revenue/Expense profile account safely excluded from baseline SA 510 balances verification.'
+                    });
+                    return; 
+                }
+            }
+
+            let reconRecord = {
+                srNo: serialCounter++,
+                pyLedger: pyItem.originalLedger,
+                pyBalance: pyItem.balance,
+                mappedCYItems: [], 
+                cyLedger: '',
+                cyBalance: 0,
+                variance: 0,
+                variancePct: 0,
+                fuzzyScore: 100,
+                status: '',
+                risk: 'Low',
+                materialityType: 'Clearly Trivial',
+                remarks: ''
+            };
+
+            let matchIdx = globalCYRegistry.findIndex(cy => cy.normalizedLedger === pyItem.normalizedLedger && Math.abs(cy.remainingBalance) > 0.01);
+            
+            if (matchIdx !== -1) {
+                let cyMatch = globalCYRegistry[matchIdx];
+                let allocatedAmt = cyMatch.remainingBalance;
+                
+                cyMatch.remainingBalance = 0; 
+                reconRecord.mappedCYItems.push({ name: cyMatch.originalLedger, amount: allocatedAmt });
+                reconRecord.cyBalance = allocatedAmt;
+                reconRecord.variance = allocatedAmt - pyItem.balance;
+                
+                if (Math.abs(reconRecord.variance) < 0.01) {
+                    reconRecord.status = 'MATCHED';
+                    reconRecord.remarks = 'Balance verified cleanly via exact auto match.';
+                } else {
+                    reconRecord.status = 'BALANCE MISMATCH';
+                    reconRecord.remarks = 'Exact account string alignment indicates value variation.';
+                }
+            } else {
+                let topFuzzyIdx = -1;
+                let topScore = 0;
+
+                globalCYRegistry.forEach((cyUnproc, uIdx) => {
+                    if (Math.abs(cyUnproc.remainingBalance) > 0.01) {
+                        let score = calculateStringSimilarityPercentage(pyItem.normalizedLedger, cyUnproc.normalizedLedger);
+                        if (score > topScore) {
+                            topScore = score;
+                            topFuzzyIdx = uIdx;
+                        }
+                    }
+                });
+
+                if (topFuzzyIdx !== -1 && topScore >= 80) {
+                    let fuzzyMatch = globalCYRegistry[topFuzzyIdx];
+                    let allocatedAmt = fuzzyMatch.remainingBalance;
+                    
+                    fuzzyMatch.remainingBalance = 0;
+                    reconRecord.mappedCYItems.push({ name: fuzzyMatch.originalLedger, amount: allocatedAmt });
+                    reconRecord.cyBalance = allocatedAmt;
+                    reconRecord.variance = allocatedAmt - pyItem.balance;
+                    reconRecord.fuzzyScore = Math.round(topScore);
+                    reconRecord.status = 'POSSIBLE MATCH';
+                    reconRecord.remarks = `Algorithmic matching confirmed closeness at ${Math.round(topScore)}%.`;
+                } else {
+                    reconRecord.status = 'MISSING IN CURRENT YEAR';
+                    reconRecord.variance = 0 - pyItem.balance;
+                    reconRecord.remarks = 'Historical ledger profile missing in incoming dataset sheets.';
+                }
+            }
+            datasetReconciliationMaster.push(reconRecord);
+        });
+
+        globalCYRegistry.forEach(cyItem => {
+            if (Math.abs(cyItem.remainingBalance) > 0.01) {
+                datasetReconciliationMaster.push({
+                    srNo: serialCounter++,
+                    pyLedger: 'N/A - NEW LINE ITEM',
+                    pyBalance: 0,
+                    mappedCYItems: [{ name: cyItem.originalLedger, amount: cyItem.remainingBalance }],
+                    cyLedger: cyItem.originalLedger,
+                    cyBalance: cyItem.remainingBalance,
+                    variance: cyItem.remainingBalance,
+                    variancePct: 100,
+                    fuzzyScore: 0,
+                    status: 'NEW LEDGER IN CURRENT YEAR',
+                    risk: 'Low',
+                    materialityType: 'Clearly Trivial',
+                    remarks: 'New baseline standalone opening balance vector detected.'
+                });
+            }
+        });
+
+        datasetReconciliationMaster.forEach(rec => {
+            if(rec.status !== 'EXCLUDED (P&L)') {
+                recalculateRowMetrics(rec);
+            }
+        });
+
+        renderDashboardSummaryKPIs();
+        renderStructuralBSValidations();
+        renderReconciliationGrid();
+        generateAuditObservationsAndConclusions();
+        
+        document.getElementById('nav-dashboard').click();
+    }
+
+    function recalculateRowMetrics(rec) {
+        const planMat = parseFloat(document.getElementById('matPlanning').value) || 0;
+        const perfMat = parseFloat(document.getElementById('matPerformance').value) || 0;
+        const trivMat = parseFloat(document.getElementById('matTrivial').value) || 0;
+
+        rec.cyBalance = rec.mappedCYItems.reduce((acc, item) => acc + item.amount, 0);
+        rec.cyLedger = rec.mappedCYItems.map(item => item.name).join(' | ');
+        rec.variance = rec.cyBalance - rec.pyBalance;
+        let absVar = Math.abs(rec.variance);
+        rec.variancePct = rec.pyBalance !== 0 ? Math.round((absVar / Math.abs(rec.pyBalance)) * 100) : 100;
+
+        if (absVar < 0.01) rec.risk = 'No Risk';
+        else if (absVar <= 10000) rec.risk = 'Low';
+        else if (absVar <= 100000) rec.risk = 'Medium';
+        else rec.risk = 'High';
+
+        if (absVar <= trivMat) rec.materialityType = 'Clearly Trivial';
+        else if (absVar <= perfMat) rec.materialityType = 'Immaterial Variance';
+        else rec.materialityType = 'Material Variance';
+    }
+
+    function renderDashboardSummaryKPIs() {
+        let metrics = { py: datasetPYRaw ? datasetPYRaw.length : 0, cy: datasetCYRaw ? datasetCYRaw.length : 0, matched: 0, mismatch: 0, missing: 0, nu: 0, high: 0, mat: 0, fuzzy: 0, pl: 0 };
+        
+        datasetReconciliationMaster.forEach(r => {
+            if (r.status === 'MATCHED') metrics.matched++;
+            if (r.status === 'BALANCE MISMATCH' || r.status === 'MANUALLY MAPPED') metrics.mismatch++;
+            if (r.status === 'MISSING IN CURRENT YEAR') metrics.missing++;
+            if (r.status === 'NEW LEDGER IN CURRENT YEAR') metrics.nu++;
+            if (r.status === 'POSSIBLE MATCH') metrics.fuzzy++;
+            if (r.status === 'EXCLUDED (P&L)') metrics.pl++;
+            if (r.risk === 'High') metrics.high++;
+            if (r.materialityType === 'Material Variance') metrics.mat++;
+        });
+
+        document.getElementById('kpiPYCount').innerText = metrics.py;
+        document.getElementById('kpiCYCount').innerText = metrics.cy;
+        document.getElementById('kpiMatched').innerText = metrics.matched;
+        document.getElementById('kpiMismatched').innerText = metrics.mismatch;
+        document.getElementById('kpiMissing').innerText = metrics.missing;
+        document.getElementById('kpiNew').innerText = metrics.nu;
+        document.getElementById('kpiHighRisk').innerText = metrics.high;
+        document.getElementById('kpiMaterial').innerText = metrics.mat;
+        document.getElementById('kpiFuzzy').innerText = metrics.fuzzy;
+        document.getElementById('kpiExcludedPL').innerText = metrics.pl;
+    }
+
+    function renderStructuralBSValidations() {
+        let pyDebit = 0, cyDebit = 0, pyCredit = 0, cyCredit = 0;
+        let pyTotal = 0, cyTotal = 0;
+
+        datasetReconciliationMaster.forEach(r => {
+            if(r.pyBalance > 0) pyDebit += r.pyBalance;
+            else pyCredit += Math.abs(r.pyBalance);
+
+            if(r.cyBalance > 0) cyDebit += r.cyBalance;
+            else cyCredit += Math.abs(r.cyBalance);
+
+            pyTotal += r.pyBalance;
+            cyTotal += r.cyBalance;
+        });
+
+        const grid = document.getElementById('bsValidationGrid');
+        if (datasetReconciliationMaster.length === 0) {
+            grid.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Awaiting data reconciliation context...</td></tr>`;
+            return;
+        }
+
+        grid.innerHTML = `
+            <tr>
+                <td class="text-start fw-bold">Aggregate Debit Structure (Dr Balances)</td>
+                <td>₹ ${pyDebit.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td>₹ ${cyDebit.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td class="fw-bold text-danger">₹ ${(cyDebit - pyDebit).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td>${Math.abs(cyDebit - pyDebit) < 0.01 ? '<span class="badge bg-success">Passed</span>' : '<span class="badge bg-warning text-dark">P&L Gap Checked</span>'}</td>
+            </tr>
+            <tr>
+                <td class="text-start fw-bold">Aggregate Credit Structure (Cr Balances)</td>
+                <td>₹ ${pyCredit.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td>₹ ${cyCredit.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td class="fw-bold text-danger">₹ ${(cyCredit - pyCredit).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td>${Math.abs(pyCredit - cyCredit) < 0.01 ? '<span class="badge bg-success">Passed</span>' : '<span class="badge bg-warning text-dark">P&L Gap Checked</span>'}</td>
+            </tr>
+            <tr>
+                <td class="text-start fw-bold">Trial Balance Structural Equilibrium Check</td>
+                <td>₹ ${pyTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td>₹ ${cyTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                <td class="fw-bold text-muted">-</td>
+                <td>${Math.abs(pyTotal) <= 5 ? '<span class="badge bg-success">Balanced</span>' : '<span class="badge bg-danger">Out of Equilibrium</span>'}</td>
+            </tr>
+        `;
+    }
+
+    function renderReconciliationGrid() {
+        const tbody = document.getElementById('reconMatrixGrid');
+        tbody.innerHTML = '';
+
+        const sTxt = document.getElementById('filterSearch').value.toUpperCase();
+        const fStatus = document.getElementById('filterStatus').value;
+        const fRisk = document.getElementById('filterRisk').value;
+        const fMat = document.getElementById('filterMateriality').value;
+
+        let visibleRows = datasetReconciliationMaster.filter(r => {
+            let mSearch = r.pyLedger.toUpperCase().includes(sTxt) || r.cyLedger.toUpperCase().includes(sTxt);
+            let mStatus = fStatus === '' || r.status === fStatus;
+            let mRisk = fRisk === '' || r.risk === fRisk;
+            let mMat = fMat === '' || r.materialityType === fMat;
+            return mSearch && mStatus && mRisk && mMat;
+        });
+
+        document.getElementById('filteredRecordsCounter').innerText = `Showing ${visibleRows.length} / ${datasetReconciliationMaster.length} entries`;
+
+        if(visibleRows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="12" class="text-center text-muted col-12">No accounts found matching your filters.</td></tr>`;
+            return;
+        }
+
+        visibleRows.forEach((r, idx) => {
+            let sBadge = 'bg-secondary';
+            if (r.status === 'MATCHED') sBadge = 'bg-success';
+            else if (r.status === 'BALANCE MISMATCH') sBadge = 'bg-danger';
+            else if (r.status === 'MANUALLY MAPPED') sBadge = 'bg-primary';
+            else if (r.status === 'MISSING IN CURRENT YEAR') sBadge = 'bg-warning text-dark';
+            else if (r.status === 'NEW LEDGER IN CURRENT YEAR') sBadge = 'bg-info text-dark';
+            else if (r.status === 'EXCLUDED (P&L)') sBadge = 'bg-dark text-white';
+
+            let rBadge = r.risk === 'High' ? 'bg-danger' : r.risk === 'Medium' ? 'bg-warning text-dark' : r.risk === 'Low' ? 'bg-info text-dark' : 'bg-light text-dark';
+            let mBadge = r.materialityType === 'Material Variance' ? 'border border-danger text-danger fw-bold' : 'text-muted';
+
+            let cyAllocationLayout = r.mappedCYItems.map(c => `
+                <div class="p-1 mb-1 bg-light border rounded small text-dark d-flex justify-content-between align-items-center">
+                    <span class="text-wrap me-2" style="font-size:11px;"><i class="bi bi-file-code text-secondary me-1"></i>${c.name}</span>
+                    <span class="fw-bold text-nowrap badge bg-secondary text-white">₹ ${c.amount.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+                </div>
+            `).join('');
+
+            if(!cyAllocationLayout) {
+                cyAllocationLayout = `<span class="text-muted text-center d-block italic small">${r.status === 'EXCLUDED (P&L)' ? 'Scoping Bypass' : 'Unmapped'}</span>`;
+            }
+
+            let lineItemActionsHtml = `
+                <button class="btn btn-xs btn-outline-primary py-0 px-1 w-100" style="font-size:11px;" onclick="openAdvancedMapModal(${r.srNo})"><i class="bi bi-shuffle"></i> Map / Group</button>
+            `;
+            
+            if (r.status === 'POSSIBLE MATCH') {
+                lineItemActionsHtml = `
+                    <button class="btn btn-xs btn-success py-0 px-1 mb-1 w-100" style="font-size:11px;" onclick="confirmFuzzyOverride(${r.srNo})"><i class="bi bi-check2-circle"></i> Accept</button>
+                    <button class="btn btn-xs btn-outline-primary py-0 px-1 w-100" style="font-size:11px;" onclick="openAdvancedMapModal(${r.srNo})"><i class="bi bi-shuffle"></i> Map / Group</button>
+                `;
+            } else if (r.status === 'MISSING IN CURRENT YEAR' || r.status === 'NEW LEDGER IN CURRENT YEAR') {
+                lineItemActionsHtml = `
+                    <button class="btn btn-xs btn-outline-danger py-0 px-1 mb-1 w-100 fw-bold" style="font-size:11px;" onclick="autoInjectUnmappedAsPLExclusion(${r.srNo})"><i class="bi bi-funnel"></i> + Exclude P&L</button>
+                    <button class="btn btn-xs btn-outline-primary py-0 px-1 w-100" style="font-size:11px;" onclick="openAdvancedMapModal(${r.srNo})"><i class="bi bi-shuffle"></i> Map / Group</button>
+                `;
+            } else if (r.status === 'EXCLUDED (P&L)') {
+                lineItemActionsHtml = `<span class="text-muted small italic text-center d-block">No Action</span>`;
+            }
+
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td class="fw-semibold text-wrap" style="max-width:220px;">${r.pyLedger}</td>
+                <td class="text-end font-monospace">${r.pyBalance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                <td>${cyAllocationLayout}</td>
+                <td class="text-end font-monospace fw-bold">${r.cyBalance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                <td class="text-end font-monospace fw-bold ${Math.abs(r.variance) > 0.01 ? 'text-danger' : 'text-success'}">${r.variance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                <td class="text-center font-monospace">${r.variancePct}%</td>
+                <td class="text-center font-monospace">${r.fuzzyScore}%</td>
+                <td class="text-center"><span class="badge ${sBadge} status-badge">${r.status}</span></td>
+                <td class="text-center"><span class="badge ${rBadge}">${r.risk}</span></td>
+                <td class="text-center small ${mBadge}">${r.materialityType}</td>
+                <td>
+                    <div class="d-flex flex-column gap-1">
+                        ${lineItemActionsHtml}
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function autoInjectUnmappedAsPLExclusion(serialNo) {
+        const targetRow = datasetReconciliationMaster.find(r => r.srNo === serialNo);
+        if(!targetRow) return;
+
+        let coreLedgerName = targetRow.pyLedger !== 'N/A - NEW LINE ITEM' ? targetRow.pyLedger : targetRow.cyLedger;
+        if(!coreLedgerName || coreLedgerName.trim() === "") return;
+
+        let cleanToken = coreLedgerName.toUpperCase()
+            .replace(/[0-9]/g, '') 
+            .replace(/[\(\)\[\]\.,\-\/]/g, ' ') 
+            .replace(/\b(A\/C|AC|ACCOUNT|LEDGER|DR|CR)\b/gi, '') 
+            .replace(/\s+/g, ' ') 
+            .trim();
+
+        if(cleanToken.length < 2) {
+            cleanToken = coreLedgerName.toUpperCase().split(' ')[0].replace(/[^A-Z]/g, '');
+        }
+
+        if(cleanToken.length >= 2) {
+            const currentKeywordsInput = document.getElementById('plKeywords');
+            let arrayTokens = currentKeywordsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+            
+            if(!arrayTokens.includes(cleanToken)) {
+                arrayTokens.push(cleanToken);
+                currentKeywordsInput.value = arrayTokens.join(', ');
+                processReconciliation();
+            } else {
+                alert(`Token "${cleanToken}" already exists within the filter keywords mapping profile configuration.`);
+            }
+        }
+    }
+
+    function confirmFuzzyOverride(serialNo) {
+        let idx = datasetReconciliationMaster.findIndex(r => r.srNo === serialNo);
+        if (idx !== -1) {
+            datasetReconciliationMaster[idx].status = 'MATCHED';
+            datasetReconciliationMaster[idx].remarks = 'Fuzzy match manual overlay validation clear.';
+            datasetReconciliationMaster[idx].fuzzyScore = 100;
+            renderReconciliationGrid();
+            renderDashboardSummaryKPIs();
+            generateAuditObservationsAndConclusions();
+        }
+    }
+
+    function openAdvancedMapModal(srNo) {
+        currentMappingSrNo = srNo;
+        const rec = datasetReconciliationMaster.find(r => r.srNo === srNo);
+        
+        document.getElementById('advModalPYName').innerText = rec.pyLedger;
+        document.getElementById('advModalPYBal').innerText = rec.pyBalance.toLocaleString('en-IN', {minimumFractionDigits: 2});
+        document.getElementById('advModalCYTotal').innerText = rec.cyBalance.toLocaleString('en-IN', {minimumFractionDigits: 2});
+        document.getElementById('advJustificationInput').value = rec.remarks.startsWith('[Manual]') ? rec.remarks.replace('[Manual]: ', '') : '';
+
+        const tbody = document.getElementById('advModalCYPoolGrid');
+        tbody.innerHTML = '';
+        
+        globalCYRegistry.forEach((cy, idx) => {
+            let currentAllocation = rec.mappedCYItems.find(item => item.name === cy.originalLedger);
+            let displayPoolAmount = cy.remainingBalance;
+            let allocationInputValue = displayPoolAmount;
+
+            if(currentAllocation) {
+                displayPoolAmount += currentAllocation.amount;
+                allocationInputValue = currentAllocation.amount;
+            }
+
+            if (Math.abs(displayPoolAmount) > 0.01 || currentAllocation) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="text-center"><input type="checkbox" class="form-check-input adv-cy-checkbox" data-idx="${idx}" ${currentAllocation ? 'checked' : ''}></td>
+                        <td class="text-wrap fw-semibold" style="font-size:12px;">${cy.originalLedger}</td>
+                        <td class="text-end font-monospace text-primary">${displayPoolAmount.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm font-monospace text-end p-0" id="advAlloc_${idx}" value="${allocationInputValue.toFixed(2)}" step="0.01" style="max-width:130px; margin-left:auto;">
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+
+        if(tbody.innerHTML === '') {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted p-3">No unallocated current year accounts available in the pool registry.</td></tr>';
+        }
+
+        new bootstrap.Modal(document.getElementById('advancedMapModal')).show();
+    }
+
+    function commitAdvancedMapping() {
+        const rec = datasetReconciliationMaster.find(r => r.srNo === currentMappingSrNo);
+        const remark = document.getElementById('advJustificationInput').value || 'Manual Override Grouping Parameters';
+        const checkedItems = document.querySelectorAll('.adv-cy-checkbox:checked');
+
+        rec.mappedCYItems.forEach(oldItem => {
+            let poolItem = globalCYRegistry.find(cy => cy.originalLedger === oldItem.name);
+            if(poolItem) poolItem.remainingBalance += oldItem.amount;
+        });
+        rec.mappedCYItems = [];
+
+        checkedItems.forEach(cb => {
+            let idx = cb.getAttribute('data-idx');
+            let poolItem = globalCYRegistry[idx];
+            let rawAllocAmt = parseFloat(document.getElementById(`advAlloc_${idx}`).value) || 0;
+            
+            let maxAvailable = poolItem.remainingBalance;
+            if (Math.abs(rawAllocAmt) > Math.abs(maxAvailable)) {
+                rawAllocAmt = maxAvailable;
+            }
+
+            poolItem.remainingBalance -= rawAllocAmt;
+            rec.mappedCYItems.push({ name: poolItem.originalLedger, amount: rawAllocAmt });
+        });
+
+        rec.status = 'MANUALLY MAPPED';
+        rec.remarks = `[Manual]: ${remark}`;
+
+        recalculateRowMetrics(rec);
+        bootstrap.Modal.getInstance(document.getElementById('advancedMapModal')).hide();
+        
+        renderDashboardSummaryKPIs();
+        renderStructuralBSValidations();
+        renderReconciliationGrid();
+        generateAuditObservationsAndConclusions();
+    }
+
+    function clearCurrentRowMappings() {
+        if(!confirm("Are you sure you want to completely decouple all linked CY entries from this account?")) return;
+        
+        const rec = datasetReconciliationMaster.find(r => r.srNo === currentMappingSrNo);
+        
+        rec.mappedCYItems.forEach(oldItem => {
+            let poolItem = globalCYRegistry.find(cy => cy.originalLedger === oldItem.name);
+            if(poolItem) poolItem.remainingBalance += oldItem.amount;
+        });
+
+        rec.mappedCYItems = [];
+        rec.status = 'MISSING IN CURRENT YEAR';
+        rec.remarks = 'Mappings reset manually. Target account missing linked inputs.';
+        
+        recalculateRowMetrics(rec);
+        bootstrap.Modal.getInstance(document.getElementById('advancedMapModal')).hide();
+        
+        renderDashboardSummaryKPIs();
+        renderStructuralBSValidations();
+        renderReconciliationGrid();
+        generateAuditObservationsAndConclusions();
+    }
+
+    function generateAuditObservationsAndConclusions() {
+        const container = document.getElementById('observationGeneratorOutput');
+        container.innerHTML = '';
+        let observations = [];
+
+        let numMismatches = 0, numMissing = 0, numNew = 0, highRiskCount = 0;
+
+        datasetReconciliationMaster.forEach(r => {
+            if (r.status === 'EXCLUDED (P&L)') return; 
+            
+            if (r.risk === 'High') highRiskCount++;
+            if ((r.status === 'BALANCE MISMATCH' || r.status === 'MANUALLY MAPPED') && r.materialityType === 'Material Variance') {
+                numMismatches++;
+                observations.push(`<strong>Audit Observation [Variance]:</strong> Opening value mapping setup inside <code>${r.pyLedger}</code> yields a material absolute deviation of <strong>₹ ${Math.abs(r.variance).toLocaleString('en-IN', {minimumFractionDigits:2})}</strong> vs audited base files.`);
+            }
+            if (r.status === 'MISSING IN CURRENT YEAR') {
+                numMissing++;
+                observations.push(`<strong>Audit Observation [Omission]:</strong> Historical ledger <code>${r.pyLedger}</code> carrying value ₹ ${r.pyBalance.toLocaleString('en-IN', {minimumFractionDigits:2})} was left completely unmapped or omitted during setup.`);
+            }
+            if (r.status === 'NEW LEDGER IN CURRENT YEAR') {
+                numNew++;
+            }
+        });
+
+        if (numNew > 0) {
+            observations.push(`<strong>Audit Operational Log:</strong> Structural parsing confirms standalone allocation tracing inside <code>${numNew}</code> unlinked opening ledger items.`);
+        }
+
+        if (datasetReconciliationMaster.length === 0) {
+            container.innerHTML = `<div class="alert alert-info m-0">No automated variances generated. Complete ingestion processes first.</div>`;
+            document.getElementById('opinionSystemAssessment').className = "fs-5 fw-bold text-muted";
+            document.getElementById('opinionSystemAssessment').innerText = "System Analysis Pending";
+            return;
+        }
+
+        if(observations.length === 0) {
+            container.innerHTML = `<div class="alert alert-success m-0"><i class="bi bi-patch-check-fill me-2"></i><strong>SA 510 Evaluation Clear:</strong> No material variations or structural discrepancies remain unresolved in Balance Sheet classes.</div>`;
+            document.getElementById('opinionSystemAssessment').className = "fs-5 fw-bold text-success";
+            document.getElementById('opinionSystemAssessment').innerText = "UNMODIFIED ASSIGNMENT CLEARANCE (SA 510)";
+            return;
+        }
+
+        observations.forEach((obs, idx) => {
+            let item = document.createElement('div');
+            item.className = "alert alert-warning m-0 py-2 small border-start border-3 border-warning";
+            item.innerHTML = `<strong>Obs ${idx + 1}:</strong> ${obs}`;
+            container.appendChild(item);
+        });
+
+        const assessmentBlock = document.getElementById('opinionSystemAssessment');
+        if (highRiskCount > 5 || numMismatches > 3) {
+            assessmentBlock.className = "fs-5 fw-bold text-danger";
+            assessmentBlock.innerText = "SIGNIFICANT BALANCING EXCEPTIONS ENCOUNTERED - PROCEDURAL MODIFICATION REQUIRED";
+        } else {
+            assessmentBlock.className = "fs-5 fw-bold text-warning-emphasis";
+            assessmentBlock.innerText = "MODERATE BALANCING EXCEPTIONS IDENTIFIED - SCRUTINY SUGGESTED";
+        }
+    }
+
+    function renderDashboardCharts() {
+        Object.keys(globalCharts).forEach(key => { if(globalCharts[key]) globalCharts[key].destroy(); });
+
+        let countsByStatus = { MATCHED: 0, MISMATCH: 0, MISSING: 0, NEW: 0, FUZZY: 0, PL: 0 };
+        let countsByRisk = { NoRisk: 0, Low: 0, Medium: 0, High: 0 };
+        let varianceArray = [];
+
+        datasetReconciliationMaster.forEach(r => {
+            if (r.status === 'MATCHED') countsByStatus.MATCHED++;
+            if (r.status === 'BALANCE MISMATCH' || r.status === 'MANUALLY MAPPED') countsByStatus.MISMATCH++;
+            if (r.status === 'MISSING IN CURRENT YEAR') countsByStatus.MISSING++;
+            if (r.status === 'NEW LEDGER IN CURRENT YEAR') countsByStatus.NEW++;
+            if (r.status === 'POSSIBLE MATCH') countsByStatus.FUZZY++;
+            if (r.status === 'EXCLUDED (P&L)') countsByStatus.PL++;
+
+            if (r.risk === 'No Risk') countsByRisk.NoRisk++;
+            if (r.risk === 'Low') countsByRisk.Low++;
+            if (r.risk === 'Medium') countsByRisk.Medium++;
+            if (r.risk === 'High') countsByRisk.High++;
+
+            if (Math.abs(r.variance) > 0.01 && r.status !== 'EXCLUDED (P&L)') {
+                varianceArray.push({ name: r.pyLedger !== 'N/A - NEW LINE ITEM' ? r.pyLedger : r.cyLedger, val: Math.abs(r.variance) });
+            }
+        });
+
+        varianceArray.sort((a,b) => b.val - a.val);
+        let top20Variances = varianceArray.slice(0, 20);
+
+        globalCharts.matched = new Chart(document.getElementById('chartMatched'), {
+            type: 'bar',
+            data: {
+                labels: ['Matched Baseline', 'Variant / Grouped'],
+                datasets: [{ data: [countsByStatus.MATCHED, (countsByStatus.MISMATCH + countsByStatus.MISSING + countsByStatus.NEW + countsByStatus.FUZZY)], backgroundColor: ['#198754', '#0284c7'] }]
+            },
+            options: { plugins: { legend: { display: false } } }
+        });
+
+        globalCharts.status = new Chart(document.getElementById('chartStatus'), {
+            type: 'pie',
+            data: {
+                labels: ['Matched', 'Mismatch/Mapped', 'Missing', 'New Line', 'Fuzzy Panel', 'Excluded P&L'],
+                datasets: [{ data: [countsByStatus.MATCHED, countsByStatus.MISMATCH, countsByStatus.MISSING, countsByStatus.NEW, countsByStatus.FUZZY, countsByStatus.PL], backgroundColor: ['#198754', '#0d6efd', '#dc3545', '#0dcaf0', '#6f42c1', '#212529'] }]
+            }
+        });
+
+        globalCharts.risk = new Chart(document.getElementById('chartRisk'), {
+            type: 'doughnut',
+            data: {
+                labels: ['No Risk', 'Low', 'Medium', 'High'],
+                datasets: [{ data: [countsByRisk.NoRisk, countsByRisk.Low, countsByRisk.Medium, countsByRisk.High], backgroundColor: ['#e9ecef', '#0dcaf0', '#ffc107', '#dc3545'] }]
+            }
+        });
+
+        globalCharts.topVar = new Chart(document.getElementById('chartTopVariances'), {
+            type: 'bar',
+            data: {
+                labels: top20Variances.map(v => v.name),
+                datasets: [{ label: 'Absolute Discrepancy Amount (₹)', data: top20Variances.map(v => v.val), backgroundColor: '#0284c7' }]
+            }
+        });
+    }
+
+    function exportReconciliationToExcel() {
+        if(datasetReconciliationMaster.length === 0) { 
+            alert('Error: No tracking matrix records loaded to deploy export pipelines.'); 
+            return; 
+        }
+
+        const clientName = document.getElementById('metaEntityName').value.toUpperCase() || 'CLIENT UNASSIGNED';
+        const targetPeriod = document.getElementById('metaFY').value || 'N/A';
+        const partnerName = document.getElementById('metaPartner').value || 'CA. REGISTERED PARTNER';
+        const currentTimestamp = new Date().toLocaleString('en-IN');
+
+        let matrixRows = [
+            ["M/S. " + clientName],
+            ["AUDIT WORKING PAPERS FOR OPENING BALANCES VERIFICATION (SA 510)"],
+            ["FINANCIAL PERIOD SCOPE: FY " + targetPeriod],
+            ["GENERATION TIMESTAMP: " + currentTimestamp],
+            ["SIGNATORY ENGAGEMENT PARTNER: " + partnerName],
+            [], 
+            [
+                "Sr No", 
+                "Previous Year Ledger Account Title", 
+                "Audited Closing Balance (PY)", 
+                "Current Year Linked Account Maps", 
+                "Ingested Opening Balance (CY)", 
+                "Reconciliation Variance", 
+                "Var %", 
+                "Fuzzy Match Score", 
+                "Verification Status Tag", 
+                "Evaluated Risk", 
+                "Materiality Type", 
+                "Auditor Verification Notes & System Remarks"
+            ]
+        ];
+
+        let aggregatePYSum = 0;
+        let aggregateCYSum = 0;
+        let aggregateVarianceSum = 0;
+
+        datasetReconciliationMaster.forEach((r) => {
+            matrixRows.push([
+                r.srNo,
+                r.pyLedger,
+                r.pyBalance,
+                r.cyLedger || "UNMAPPED OMISSION",
+                r.cyBalance,
+                r.variance,
+                r.variancePct / 100, 
+                r.fuzzyScore / 100,
+                r.status,
+                r.risk,
+                r.materialityType,
+                r.remarks
+            ]);
+
+            aggregatePYSum += r.pyBalance;
+            aggregateCYSum += r.cyBalance;
+            if (r.status !== 'EXCLUDED (P&L)') {
+                aggregateVarianceSum += r.variance;
+            }
+        });
+
+        matrixRows.push([
+            "",
+            "TOTAL BALANCE SHEET STRUCTURAL VALIDATION AGGREGATE",
+            aggregatePYSum,
+            "",
+            aggregateCYSum,
+            aggregateVarianceSum,
+            "", "", "", "", "",
+            "System Note: Comprehensive accounting cross-tabulations compiled successfully."
+        ]);
+
+        const worksheet = XLSX.utils.aoa_to_sheet(matrixRows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "SA 510 Audit Matrix");
+
+        const maxRange = XLSX.utils.decode_range(worksheet['!ref']);
+        const rowLength = maxRange.e.r;
+
+        worksheet['!cols'] = [
+            { wch: 8 },   
+            { wch: 40 },  
+            { wch: 28 },  
+            { wch: 40 },  
+            { wch: 28 },  
+            { wch: 25 },  
+            { wch: 10 },  
+            { wch: 15 },  
+            { wch: 25 },  
+            { wch: 15 },  
+            { wch: 22 },  
+            { wch: 65 }   
+        ];
+
+        for (let r = 0; r <= rowLength; r++) {
+            if (r === 0) {
+                worksheet[XLSX.utils.encode_cell({ r: 0, c: 0 })].s = { font: { bold: true, size: 16, color: { rgb: "0F172A" } } };
+                continue;
+            }
+            if (r < 5) {
+                const targetCell = worksheet[XLSX.utils.encode_cell({ r: r, c: 0 })];
+                if (targetCell) targetCell.s = { font: { bold: true, italic: true, size: 10, color: { rgb: "475569" } } };
+                continue;
+            }
+
+            if (r === 6) {
+                for (let c = 0; c <= 11; c++) {
+                    const headerCell = worksheet[XLSX.utils.encode_cell({ r: 6, c: c })];
+                    if (headerCell) {
+                        headerCell.s = {
+                            font: { bold: true, size: 11, color: { rgb: "FFFFFF" } },
+                            fill: { fgColor: { rgb: "1E293B" } }, 
+                            alignment: { vertical: "center", horizontal: (c === 2 || c === 4 || c === 5) ? "right" : "center", wrapText: true },
+                            border: {
+                                top: { style: "thin", color: { rgb: "000000" } },
+                                bottom: { style: "medium", color: { rgb: "000000" } }
+                            }
+                        };
+                    }
+                }
+                continue;
+            }
+
+            if (r === rowLength) {
+                for (let c = 0; c <= 11; c++) {
+                    const totalCell = worksheet[XLSX.utils.encode_cell({ r: r, c: c })];
+                    if (totalCell) {
+                        totalCell.s = {
+                            font: { bold: true, size: 11, color: { rgb: "0F172A" } },
+                            fill: { fgColor: { rgb: "F1F5F9" } },
+                            border: {
+                                top: { style: "thin", color: { rgb: "000000" } },
+                                bottom: { style: "double", color: { rgb: "000000" } } 
+                            }
+                        };
+                        if (c === 2 || c === 4 || c === 5) {
+                            totalCell.z = '₹ #,##,##0.00;[Red](₹ #,##,##0.00);"-"';
+                        }
+                    }
+                }
+                continue;
+            }
+
+            for (let c = 0; c <= 11; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: r, c: c });
+                const dataCell = worksheet[cellRef];
+                if (!dataCell) continue;
+
+                let cellFormatObj = {
+                    font: { size: 10 },
+                    alignment: { vertical: "center", horizontal: "left" },
+                    border: {
+                        bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                        right: { style: "thin", color: { rgb: "E2E8F0" } }
+                    }
+                };
+
+                if (c === 0 || c === 6 || c === 7 || c === 8 || c === 9 || c === 10) {
+                    cellFormatObj.alignment.horizontal = "center";
+                }
+
+                if (c === 2 || c === 4 || c === 5) {
+                    cellFormatObj.alignment.horizontal = "right";
+                    dataCell.z = '₹ #,##,##0.00;[Red](₹ #,##,##0.00);"-"'; 
+                }
+                if (c === 6) dataCell.z = '0.0%';
+                if (c === 7) dataCell.z = '0%';
+
+                if (c === 8) { 
+                    const statusVal = dataCell.v;
+                    cellFormatObj.font.bold = true;
+                    if (statusVal === "MATCHED") {
+                        cellFormatObj.fill = { fgColor: { rgb: "DCFCE7" } }; 
+                        cellFormatObj.font.color = { rgb: "14532D" };
+                    } else if (statusVal === "BALANCE MISMATCH") {
+                        cellFormatObj.fill = { fgColor: { rgb: "FEE2E2" } }; 
+                        cellFormatObj.font.color = { rgb: "991B1B" };
+                    } else if (statusVal === "MISSING IN CURRENT YEAR") {
+                        cellFormatObj.fill = { fgColor: { rgb: "FEF3C7" } }; 
+                        cellFormatObj.font.color = { rgb: "92400E" };
+                    } else if (statusVal === "EXCLUDED (P&L)") {
+                        cellFormatObj.fill = { fgColor: { rgb: "F1F5F9" } }; 
+                        cellFormatObj.font.color = { rgb: "475569" };
+                    } else if (statusVal === "MANUALLY MAPPED" || statusVal === "NEW LEDGER IN CURRENT YEAR") {
+                        cellFormatObj.fill = { fgColor: { rgb: "E0F2FE" } }; 
+                        cellFormatObj.font.color = { rgb: "075985" };
+                    }
+                }
+
+                if (c === 9 && dataCell.v === "High") {
+                    cellFormatObj.font.bold = true;
+                    cellFormatObj.font.color = { rgb: "EF4444" };
+                }
+
+                dataCell.s = cellFormatObj;
+            }
+        }
+
+        const fileNameSanitized = clientName.replace(/\s+/g, '_');
+        XLSX.writeFile(workbook, `SA510_Reconciliation_Matrix_${fileNameSanitized}.xlsx`);
+    }
+
+    async function exportAuditReportPDF() {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        
+        pdf.setFillColor(15, 23, 42);
+        pdf.rect(0, 0, 210, 297, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(22);
+        pdf.text("SA 510 WORKING PAPERS LOG SYSTEM", 15, 80);
+        pdf.setFontSize(12);
+        pdf.text(`Client Reference: ${document.getElementById('metaEntityName').value}`, 15, 100);
+
+        pdf.addPage();
+        pdf.setTextColor(0,0,0);
+        pdf.setFontSize(14);
+        pdf.text("Executive Summary Analytics Overview", 15, 15);
+
+        const targetDash = document.getElementById('tab-dashboard');
+        await html2canvas(targetDash, { scale: 1.5 }).then(canvas => {
+            const imgData = canvas.toDataURL('image/png');
+            pdf.addImage(imgData, 'PNG', 10, 25, 190, (canvas.height * 190) / canvas.width);
+        });
+
+        pdf.save("SA_510_Audit_Report.pdf");
+    }
+
+    function saveProjectToLocalStorage() {
+        const companyKey = document.getElementById('metaEntityName').value.trim() || 'DefaultClient';
+        const yearKey = document.getElementById('metaFY').value.trim() || 'DefaultFY';
+        const storageKey = `SA510_PRJ_REVISED_${companyKey}_${yearKey}`;
+        
+        const pkg = {
+            metadata: { 
+                entityName: companyKey, 
+                fy: yearKey, 
+                partner: document.getElementById('metaPartner').value, 
+                manager: document.getElementById('metaManager').value 
+            },
+            cy: datasetCYRaw, 
+            py: datasetPYRaw, 
+            master: datasetReconciliationMaster, 
+            pool: globalCYRegistry
+        };
+        
+        localStorage.setItem(storageKey, JSON.stringify(pkg));
+        alert(`SUCCESS: Data for "${companyKey}" under Period "${yearKey}" has been cleanly indexed to system cache layers.`);
+        scanAndPopulateSavedProjectsMenu();
+    }
+
+    function scanAndPopulateSavedProjectsMenu() {
+        const dropdownMenu = document.getElementById('savedProjectsListMenu');
+        dropdownMenu.innerHTML = '';
+        
+        let identifiedKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            let key = localStorage.key(i);
+            if(key.startsWith('SA510_PRJ_REVISED_')) {
+                identifiedKeys.push(key);
+            }
+        }
+
+        if(identifiedKeys.length === 0) {
+            dropdownMenu.innerHTML = `<li><span class="dropdown-item text-muted small italic"><i class="bi bi-info-circle me-1"></i>No saved configurations found</span></li>`;
+            return;
+        }
+
+        identifiedKeys.sort();
+
+        identifiedKeys.forEach(storageKey => {
+            let cleanLabel = storageKey.replace('SA510_PRJ_REVISED_', '').replace('_', ' [') + ']';
+            
+            let li = document.createElement('li');
+            li.innerHTML = `
+                <a class="dropdown-item d-flex justify-content-between align-items-center py-2" href="#" onclick="directLoadProjectFromMenu('${storageKey}')">
+                    <span><i class="bi bi-file-earmark-spreadsheet text-success me-2"></i><strong>${cleanLabel}</strong></span>
+                    <i class="bi bi-arrow-right text-muted small"></i>
+                </a>
+            `;
+            dropdownMenu.appendChild(li);
+        });
+    }
+
+    function directLoadProjectFromMenu(storageKey) {
+        const raw = localStorage.getItem(storageKey);
+        if(!raw) return;
+        
+        const parsed = JSON.parse(raw);
+        datasetCYRaw = parsed.cy || [];
+        datasetPYRaw = parsed.py || [];
+        datasetReconciliationMaster = parsed.master || [];
+        globalCYRegistry = parsed.pool || [];
+
+        if(parsed.metadata) {
+            document.getElementById('metaEntityName').value = parsed.metadata.entityName || '';
+            document.getElementById('metaFY').value = parsed.metadata.fy || '';
+            document.getElementById('metaPartner').value = parsed.metadata.partner || '';
+            document.getElementById('metaManager').value = parsed.metadata.manager || '';
+        }
+
+        updateHeader();
+        renderDashboardSummaryKPIs();
+        renderStructuralBSValidations();
+        renderReconciliationGrid();
+        generateAuditObservationsAndConclusions();
+        
+        alert(`Engagement File Restored: Loaded active workspace parameters successfully.`);
+    }
+
+    window.onload = function() {
+        updateHeader();
+        scanAndPopulateSavedProjectsMenu();
+    };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
